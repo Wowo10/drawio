@@ -77,3 +77,20 @@ func drawFilledCircle(renderer *sdl.Renderer, cx, cy, radius int32) {
 func lerp(a, b float32, t float32) float32 {
 	return a + (b-a)*t
 }
+
+type Shape struct {
+	Points    []sdl.Point
+	color     sdl.Color
+	brushSize int32
+}
+
+func (s *Shape) Add(x, y int32) {
+	s.Points = append(s.Points, sdl.Point{X: x, Y: y})
+}
+
+func (s Shape) Draw(r *sdl.Renderer) {
+	r.SetDrawColor(s.color.R, s.color.G, s.color.B, s.color.A)
+	for _, p := range s.Points {
+		drawFilledCircle(r, p.X, p.Y, s.brushSize)
+	}
+}

@@ -10,23 +10,6 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-type Shape struct {
-	Points    []sdl.Point
-	color     sdl.Color
-	brushSize int32
-}
-
-func (s *Shape) Add(x, y int32) {
-	s.Points = append(s.Points, sdl.Point{X: x, Y: y})
-}
-
-func (s Shape) Draw(r *sdl.Renderer) {
-	r.SetDrawColor(s.color.R, s.color.G, s.color.B, s.color.A)
-	for _, p := range s.Points {
-		drawFilledCircle(r, p.X, p.Y, s.brushSize)
-	}
-}
-
 func main() {
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
 		fmt.Fprintf(os.Stderr, "could not initialize sdl: %v\n", err)
@@ -64,17 +47,16 @@ func main() {
 	defer window.Destroy()
 	defer renderer.Destroy()
 
-	window.SetTitle("SDL2 Fullscreen on Mouse Display")
+	window.SetTitle("drawio")
 
-	texture, err := imageToTexture(renderer, img)
+	screenShotBackgroundTexture, err := imageToTexture(renderer, img)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create texture: %v\n", err)
 		os.Exit(1)
 	}
-	defer texture.Destroy()
+	defer screenShotBackgroundTexture.Destroy()
 
 	var (
-		shapes       []Shape
 		drawing      bool
 		lastX, lastY int32
 		currentShape Shape = Shape{
@@ -82,6 +64,19 @@ func main() {
 			brushSize: 4,
 		}
 	)
+
+	canvas, err := renderer.CreateTexture(sdl.PIXELFORMAT_RGBA8888, sdl.TEXTUREACCESS_TARGET, mode.W, mode.H)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create canvas texture: %v\n", err)
+		os.Exit(1)
+	}
+	canvas.SetBlendMode(sdl.BLENDMODE_BLEND)
+	renderer.SetRenderTarget(canvas)
+	renderer.SetDrawColor(0, 0, 0, 0)
+	renderer.Clear()
+	renderer.SetRenderTarget(nil)
+
+	var undoStack []Shape
 
 	running := true
 	for running {
@@ -94,10 +89,16 @@ func main() {
 					ctrlDown := e.Keysym.Mod&sdl.KMOD_CTRL != 0
 					zDown := e.Keysym.Sym == sdl.K_z
 
-					if ctrlDown && zDown {
-						if len(shapes) != 0 {
-							shapes = shapes[:len(shapes)-1]
+					if ctrlDown && zDown && len(undoStack) > 0 {
+						undoStack = undoStack[:len(undoStack)-1]
+
+						renderer.SetRenderTarget(canvas)
+						renderer.SetDrawColor(0, 0, 0, 0)
+						renderer.Clear()
+						for _, s := range undoStack {
+							s.Draw(renderer)
 						}
+						renderer.SetRenderTarget(nil)
 					}
 
 					switch e.Keysym.Sym {
@@ -124,39 +125,44 @@ func main() {
 						lastX, lastY = e.X, e.Y
 					case sdl.MOUSEBUTTONUP:
 						drawing = false
-						shapes = append(shapes, currentShape)
-						currentShape = Shape{color: currentShape.color, brushSize: currentShape.brushSize}
+						currentShape = dumpShape(renderer, canvas, currentShape, undoStack)
 					}
 				}
 			case *sdl.MouseMotionEvent:
 				if drawing {
 					x, y := e.X, e.Y
+					minDist := float32(currentShape.brushSize) * 0.8
+
 					dx := float32(x - lastX)
 					dy := float32(y - lastY)
 					dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-					if dist == 0 {
-						currentShape.Add(x, y)
-					} else {
-						step := float32(currentShape.brushSize) / 2
-						for t := float32(0); t <= dist; t += step {
-							px := int32(lerp(float32(lastX), float32(x), t/dist))
-							py := int32(lerp(float32(lastY), float32(y), t/dist))
-							currentShape.Add(px, py)
+					if dist >= minDist {
+						steps := int(dist / minDist)
+						if steps == 0 {
+							steps = 1
 						}
-					}
 
-					lastX, lastY = x, y
+						for i := 1; i <= steps; i++ {
+							t := float32(i) / float32(steps)
+							px := int32(lerp(float32(lastX), float32(x), t))
+							py := int32(lerp(float32(lastY), float32(y), t))
+							currentShape.Add(px, py)
+
+							if len(currentShape.Points) >= 8000 {
+								currentShape = dumpShape(renderer, canvas, currentShape, undoStack)
+							}
+						}
+
+						lastX, lastY = x, y
+					}
 				}
 			}
 		}
 
 		renderer.Clear()
-		renderer.Copy(texture, nil, nil)
-
-		for _, s := range shapes {
-			s.Draw(renderer)
-		}
+		renderer.Copy(screenShotBackgroundTexture, nil, nil)
+		renderer.Copy(canvas, nil, nil)
 
 		currentShape.Draw(renderer)
 
@@ -170,4 +176,14 @@ func main() {
 
 	// prevent BadWindow error while SDL is closing
 	time.Sleep(10 * time.Millisecond)
+}
+
+func dumpShape(renderer *sdl.Renderer, canvas *sdl.Texture, currentShape Shape, undoStack []Shape) Shape {
+	renderer.SetRenderTarget(canvas)
+	currentShape.Draw(renderer)
+	renderer.SetRenderTarget(nil)
+
+	undoStack = append(undoStack, currentShape)
+	currentShape = Shape{color: currentShape.color, brushSize: currentShape.brushSize}
+	return currentShape
 }

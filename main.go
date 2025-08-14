@@ -88,6 +88,7 @@ func main() {
 				if e.Type == sdl.KEYDOWN {
 					ctrlDown := e.Keysym.Mod&sdl.KMOD_CTRL != 0
 					zDown := e.Keysym.Sym == sdl.K_z
+					sDown := e.Keysym.Sym == sdl.K_s
 
 					if ctrlDown && zDown && len(undoStack) > 0 {
 						undoStack = undoStack[:len(undoStack)-1]
@@ -99,6 +100,10 @@ func main() {
 							s.Draw(renderer)
 						}
 						renderer.SetRenderTarget(nil)
+					}
+
+					if ctrlDown && sDown {
+						saveRendererPNG(renderer, ss_bounds.Dx(), ss_bounds.Dy())
 					}
 
 					switch e.Keysym.Sym {
@@ -176,14 +181,4 @@ func main() {
 
 	// prevent BadWindow error while SDL is closing
 	time.Sleep(10 * time.Millisecond)
-}
-
-func dumpShape(renderer *sdl.Renderer, canvas *sdl.Texture, currentShape Shape, undoStack []Shape) Shape {
-	renderer.SetRenderTarget(canvas)
-	currentShape.Draw(renderer)
-	renderer.SetRenderTarget(nil)
-
-	undoStack = append(undoStack, currentShape)
-	currentShape = Shape{color: currentShape.color, brushSize: currentShape.brushSize}
-	return currentShape
 }

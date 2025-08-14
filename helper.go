@@ -3,12 +3,33 @@ package main
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
+	"image/png"
+	"os"
+	"time"
 	"unsafe"
 
 	"github.com/kbinani/screenshot"
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+type Shape struct {
+	Points    []sdl.Point
+	color     sdl.Color
+	brushSize int32
+}
+
+func (s *Shape) Add(x, y int32) {
+	s.Points = append(s.Points, sdl.Point{X: x, Y: y})
+}
+
+func (s Shape) Draw(r *sdl.Renderer) {
+	r.SetDrawColor(s.color.R, s.color.G, s.color.B, s.color.A)
+	for _, p := range s.Points {
+		drawFilledCircle(r, p.X, p.Y, s.brushSize)
+	}
+}
 
 func getDisplayForMouse() (int, sdl.Rect, image.Rectangle, sdl.DisplayMode, error) {
 	mouseX, mouseY, _ := sdl.GetGlobalMouseState()
@@ -78,19 +99,55 @@ func lerp(a, b float32, t float32) float32 {
 	return a + (b-a)*t
 }
 
-type Shape struct {
-	Points    []sdl.Point
-	color     sdl.Color
-	brushSize int32
+func dumpShape(renderer *sdl.Renderer, canvas *sdl.Texture, currentShape Shape, undoStack []Shape) Shape {
+	renderer.SetRenderTarget(canvas)
+	currentShape.Draw(renderer)
+	renderer.SetRenderTarget(nil)
+
+	undoStack = append(undoStack, currentShape)
+	currentShape = Shape{color: currentShape.color, brushSize: currentShape.brushSize}
+	return currentShape
 }
 
-func (s *Shape) Add(x, y int32) {
-	s.Points = append(s.Points, sdl.Point{X: x, Y: y})
-}
+func saveRendererPNG(renderer *sdl.Renderer, width, height int) error {
+	pixels := make([]byte, width*height*4)
 
-func (s Shape) Draw(r *sdl.Renderer) {
-	r.SetDrawColor(s.color.R, s.color.G, s.color.B, s.color.A)
-	for _, p := range s.Points {
-		drawFilledCircle(r, p.X, p.Y, s.brushSize)
+	if err := renderer.ReadPixels(
+		nil,
+		sdl.PIXELFORMAT_ABGR8888,
+		unsafe.Pointer(&pixels[0]),
+		width*4,
+	); err != nil {
+		return err
 	}
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			i := (y*width + x) * 4
+			r := pixels[i+0]
+			g := pixels[i+1]
+			b := pixels[i+2]
+			a := pixels[i+3]
+			img.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: a})
+		}
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	dirPath := fmt.Sprintf("%s/drawio", homeDir)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return err
+	}
+
+	desktopPath := fmt.Sprintf("%s/drawio/drawio-%d.png", homeDir, time.Now().UnixNano())
+	f, err := os.Create(desktopPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
 }

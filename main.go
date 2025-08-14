@@ -1,5 +1,11 @@
 package main
 
+/*
+#cgo CFLAGS: -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+#cgo LDFLAGS: -L/usr/lib -lSDL2
+*/
+import "C"
+
 import (
 	"fmt"
 	"math"
@@ -130,7 +136,7 @@ func main() {
 						lastX, lastY = e.X, e.Y
 					case sdl.MOUSEBUTTONUP:
 						drawing = false
-						currentShape = dumpShape(renderer, canvas, currentShape, undoStack)
+						currentShape = dumpShape(renderer, canvas, currentShape, &undoStack)
 					}
 				}
 			case *sdl.MouseMotionEvent:
@@ -155,7 +161,7 @@ func main() {
 							currentShape.Add(px, py)
 
 							if len(currentShape.Points) >= 8000 {
-								currentShape = dumpShape(renderer, canvas, currentShape, undoStack)
+								currentShape = dumpShape(renderer, canvas, currentShape, &undoStack)
 							}
 						}
 

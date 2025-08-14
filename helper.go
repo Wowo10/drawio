@@ -99,12 +99,12 @@ func lerp(a, b float32, t float32) float32 {
 	return a + (b-a)*t
 }
 
-func dumpShape(renderer *sdl.Renderer, canvas *sdl.Texture, currentShape Shape, undoStack []Shape) Shape {
+func dumpShape(renderer *sdl.Renderer, canvas *sdl.Texture, currentShape Shape, undoStack *[]Shape) Shape {
 	renderer.SetRenderTarget(canvas)
 	currentShape.Draw(renderer)
 	renderer.SetRenderTarget(nil)
 
-	undoStack = append(undoStack, currentShape)
+	*undoStack = append(*undoStack, currentShape)
 	currentShape = Shape{color: currentShape.color, brushSize: currentShape.brushSize}
 	return currentShape
 }
